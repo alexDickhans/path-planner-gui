@@ -35,11 +35,17 @@ float distance(ImVec2 a, ImVec2 b) {
 	return sqrt(pow(a.x - b.x, 2) + pow(a.y - b.y, 2));
 }
 
+float convertToField(float x) {
+	return x / 708.0 * 140.0;
+}
+
 class Spline {
 private:
 	ImVec2 points[4];
 
 	bool isFocus[4]{false, false, false, false};
+
+	std::string motionProfile{"nullptr"};
 
 public:
 	Spline(ImVec2 lastPos, ImVec2 lastArm, ImVec2 mousePos) {
@@ -87,13 +93,24 @@ public:
 		return overallFocus;
 	}
 
-	ImVec2 get(int i) {
+	ImVec2& get(int i) {
 		return points[i];
 	}
 
-//	Spline convertToField(ImVec2 windowPosition) {
-//		return
-//	}
+	Spline convertEntireToField(ImVec2 windowPosition) {
+		return {ImVec2(convertToField(points[0].y), convertToField(points[0].x)),
+		ImVec2(convertToField(points[1].y), convertToField(points[1].x)),
+		ImVec2(convertToField(points[2].y), convertToField(points[2].x)),
+		ImVec2(convertToField(points[3].y), convertToField(points[3].x))};
+	}
+
+	std::string getMotionProfiling() {
+		return motionProfile;
+	}
+
+	std::string* getMPPointer() {
+		return &motionProfile;
+	}
 };
 
 // Simple helper function to load an image into a OpenGL texture with common settings
@@ -133,8 +150,38 @@ static void glfw_error_callback(int error, const char* description)
 	fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
 
-void save(std::vector<Spline> path) {
+void save(std::vector<Spline> path, ImVec2 windowPosition, std::string filename, std::string name) {
+	std::vector<Spline> convertedPath;
 
+	for (auto &item: path) {
+		convertedPath.emplace_back(item.convertEntireToField(windowPosition));
+	}
+
+	std::ofstream file(filename);
+
+	file.clear();
+
+	file << "#pragma once" << std::endl;
+	file << "#include <vector>" << std::endl;
+
+	file << "std::vector<std::pair<PathPlanner::BezierSegment, Pronounce::SinusoidalVelocityProfile*>> " << name << " = " << "{";
+
+	for (auto &item: convertedPath) {
+		file << "{PathPlanner::BezierSegment(";
+		for (int i = 0; i < 4; i++) {
+			file << "PathPlanner::Point(" << item.get(i).x << "_in, " << item.get(i).y << "_in)";
+			if (i != 3) {
+				file << ",";
+			}
+		}
+		file << ")," << std::endl << item.getMotionProfiling() << "}," << std::endl;
+	}
+
+	file << "};" << std::endl;
+
+	file << "// PathPlanner made path" << std::endl;
+
+	file.close();
 }
 
 // Main code
@@ -209,7 +256,19 @@ int main(int, char**)
 			static int counter = 0;
 
 			ImGui::Begin(
-					"Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+					"Hello, world!", NULL, ImGuiWindowFlags_MenuBar);                          // Create a window called "Hello, world!" and append into it.
+
+			if (ImGui::BeginMenuBar())
+			{
+				if (ImGui::BeginMenu("File"))
+				{
+					if (ImGui::MenuItem("Open..", "Ctrl+O")) { /* Do stuff */ }
+					if (ImGui::MenuItem("Save", "Ctrl+S"))   { save(splines, windowPosition, "testFile.cpp", "path1"); }
+					if (ImGui::MenuItem("New", "Ctrl+N"))  { /* Do stuff */ }
+					ImGui::EndMenu();
+				}
+				ImGui::EndMenuBar();
+			}
 
 			ImGui::Text("X: %f, Y: %f", (ImGui::GetMousePos().y-windowPosition.y) / my_image_width * 140.0,
 						(ImGui::GetMousePos().x-windowPosition.x) / my_image_height * 140.0);
@@ -233,7 +292,7 @@ int main(int, char**)
 			isFocus = item.processMouse(windowPosition, isFocus) || isFocus;
 		}
 
-		if (ImGui::IsMouseDoubleClicked(1)) {
+		if (ImGui::IsMouseDoubleClicked(1) && splines.size() > 1) {
 			for (int i = 0; i < splines.size(); i++) {
 				if (distance(splines.at(i).get(3), minus(ImGui::GetMousePos(), windowPosition)) < 8) {
 					splines.erase(splines.begin() + i);
