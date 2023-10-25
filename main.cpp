@@ -19,20 +19,81 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+ImVec2 add(ImVec2 a, ImVec2 b) {
+	return {a.x + b.x, a.y + b.y};
+}
+
+ImVec2 minus(ImVec2 a, ImVec2 b) {
+	return {a.x - b.x, a.y - b.y};
+}
+
+ImVec2 mult(ImVec2 a, double scalar) {
+	return ImVec2(a.x * scalar, a.y * scalar);
+}
+
+float distance(ImVec2 a, ImVec2 b) {
+	return sqrt(pow(a.x - b.x, 2) + pow(a.y - b.y, 2));
+}
+
 class Spline {
 private:
-	ImVec2 a, b, c, d;
+	ImVec2 points[4];
+
+	bool isFocus[4]{false, false, false, false};
+
 public:
+	Spline(ImVec2 lastPos, ImVec2 lastArm, ImVec2 mousePos) {
+		this->points[0] = lastPos;
+		this->points[1] = add(lastPos, minus(lastPos, lastArm));
+		this->points[2] = add(this->points[1], mult(minus(mousePos, this->points[1]), 0.5));
+		this->points[3] = mousePos;
+	}
 	Spline(ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 d) {
-		this->a = a;
-		this->b = b;
-		this->c = c;
-		this->d = d;
+		this->points[0] = a;
+		this->points[1] = b;
+		this->points[2] = c;
+		this->points[3] = d;
 	}
 
-	void printSpline() {
-		ImGui::GetForegroundDrawList()->AddBezierCubic(a, b, c, d, IM_COL32(255, 0, 0, 128), 5);
+	void printSpline(ImVec2 windowPosition) {
+		ImGui::GetForegroundDrawList()->AddBezierCubic(add(points[0], windowPosition), add(points[1], windowPosition), add(points[2], windowPosition), add(points[3], windowPosition), IM_COL32(0, 0, 0, 225), 2);
+		ImGui::GetForegroundDrawList()->AddLine(add(points[0], windowPosition), add(points[1], windowPosition), IM_COL32(10, 10, 10, 255), 3);
+		ImGui::GetForegroundDrawList()->AddLine(add(points[2], windowPosition), add(points[3], windowPosition), IM_COL32(10, 10, 10, 255), 3);
+		ImGui::GetForegroundDrawList()->AddCircleFilled(add(points[0], windowPosition), 8, IM_COL32(0, 255, 0, 255));
+		ImGui::GetForegroundDrawList()->AddCircleFilled(add(points[1], windowPosition), 8, IM_COL32(0, 255, 0, 255));
+		ImGui::GetForegroundDrawList()->AddCircleFilled(add(points[2], windowPosition), 10, IM_COL32(255, 0, 0, 255));
+		ImGui::GetForegroundDrawList()->AddCircleFilled(add(points[3], windowPosition), 10, IM_COL32(255, 0, 0, 255));
 	}
+
+	bool processMouse(ImVec2 windowPosition, bool overallFocus) {
+
+		for (auto &focus: isFocus) {
+			overallFocus = focus || overallFocus;
+		}
+
+		for (int i = 0; i < 4; i++) {
+			if (distance(minus(ImGui::GetMousePos(), windowPosition), points[i]) < 8 && ImGui::IsMouseDown(0) && !overallFocus) {
+				isFocus[i] = true;
+				overallFocus = true;
+			} else if (!ImGui::IsMouseDown(0)) {
+				isFocus[i] = false;
+			}
+
+			if (isFocus[i]) {
+				points[i] = minus(ImGui::GetMousePos(), windowPosition);
+			}
+		}
+
+		return overallFocus;
+	}
+
+	ImVec2 get(int i) {
+		return points[i];
+	}
+
+//	Spline convertToField(ImVec2 windowPosition) {
+//		return
+//	}
 };
 
 // Simple helper function to load an image into a OpenGL texture with common settings
@@ -72,6 +133,10 @@ static void glfw_error_callback(int error, const char* description)
 	fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
 
+void save(std::vector<Spline> path) {
+
+}
+
 // Main code
 int main(int, char**)
 {
@@ -86,7 +151,7 @@ int main(int, char**)
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
 
 	// Create window with graphics context
-	GLFWwindow* window = glfwCreateWindow(1280, 720, "Dear ImGui GLFW+OpenGL3 example", nullptr, nullptr);
+	GLFWwindow* window = glfwCreateWindow(1920, 1080, "Path planner", nullptr, nullptr);
 	if (window == nullptr)
 		return 1;
 	glfwMakeContextCurrent(window);
@@ -98,6 +163,7 @@ int main(int, char**)
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+	io.ConfigWindowsMoveFromTitleBarOnly = true;
 
 	// Setup Dear ImGui style
 //	ImGui::StyleColorsDark();
@@ -116,7 +182,7 @@ int main(int, char**)
 	// Our state
 	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-	ImVec2 points[4]  = {ImVec2(0.0, 0.0), ImVec2(0.0, 0.0), ImVec2(0.0, 0.0), ImVec2(0.0, 0.0)};
+	std::vector<Spline> splines = {Spline(ImVec2(400, 50), ImVec2(700, 50), ImVec2(50, 200))};
 
 	while (!glfwWindowShouldClose(window))
 	{
@@ -132,19 +198,27 @@ int main(int, char**)
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
+		ImGui::Begin("Field");
+		ImGui::Image((void*)(intptr_t)my_image_texture, ImVec2(my_image_width, my_image_height));
+		ImVec2 windowPosition = minus(ImGui::GetWindowPos(), ImVec2(-10.0, -30.0));
+		ImGui::End();
+
 		// 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
 		{
 			static float f = 0.0f;
 			static int counter = 0;
 
-			ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+			ImGui::Begin(
+					"Hello, world!");                          // Create a window called "Hello, world!" and append into it.
 
-			ImGui::Text("This is some useful text.");
+			ImGui::Text("X: %f, Y: %f", (ImGui::GetMousePos().y-windowPosition.y) / my_image_width * 140.0,
+						(ImGui::GetMousePos().x-windowPosition.x) / my_image_height * 140.0);
 
 			ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-			ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
+			ImGui::ColorEdit3("clear color", (float *) &clear_color); // Edit 3 floats representing a color
 
-			if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+			if (ImGui::Button(
+					"Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
 				counter++;
 			ImGui::SameLine();
 			ImGui::Text("counter = %d", counter);
@@ -153,23 +227,28 @@ int main(int, char**)
 			ImGui::End();
 		}
 
-		ImGui::Begin("OpenGL Texture Text");
-		ImGui::Text("pointer = %p", &my_image_texture);
-		ImGui::Text("size = %d x %d", my_image_width, my_image_height);
-		ImGui::Image((void*)(intptr_t)my_image_texture, ImVec2(my_image_width, my_image_height));
-		ImGui::End();
+		bool isFocus = false;
 
-		std::cout << "X: " << ImGui::GetMousePos().x / my_image_width * 140.0 << " Y: " << ImGui::GetMousePos().y / my_image_height * 140.0 << std::endl;
-		ImGui::GetForegroundDrawList()->AddCircle(ImGui::GetMousePos(), 5, IM_COL32(255, 0, 0, 255));
-
-		if (ImGui::IsMouseClicked(0)) {
-			for (int i = 0; i < 3; i++) {
-				points[i] = points[i+1];
-			}
-			points[3] = ImGui::GetMousePos();
+		for (auto &item: splines) {
+			isFocus = item.processMouse(windowPosition, isFocus) || isFocus;
 		}
 
-		Spline(points[0], points[1], points[2], points[3]).printSpline();
+		if (ImGui::IsMouseDoubleClicked(1)) {
+			for (int i = 0; i < splines.size(); i++) {
+				if (distance(splines.at(i).get(3), minus(ImGui::GetMousePos(), windowPosition)) < 8) {
+					splines.erase(splines.begin() + i);
+					break;
+				}
+			}
+		}
+
+		if (ImGui::IsMouseDoubleClicked(0) && !isFocus) {
+			splines.emplace_back(splines.at(splines.size()-1).get(3), splines.at(splines.size()-1).get(2), minus(ImGui::GetMousePos(), windowPosition));
+		}
+
+		for (auto &item: splines) {
+			item.printSpline(windowPosition);
+		}
 
 		// Rendering
 		ImGui::Render();
