@@ -19,6 +19,22 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+class Spline {
+private:
+	ImVec2 a, b, c, d;
+public:
+	Spline(ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 d) {
+		this->a = a;
+		this->b = b;
+		this->c = c;
+		this->d = d;
+	}
+
+	void printSpline() {
+		ImGui::GetForegroundDrawList()->AddBezierCubic(a, b, c, d, IM_COL32(255, 0, 0, 128), 5);
+	}
+};
+
 // Simple helper function to load an image into a OpenGL texture with common settings
 bool LoadTextureFromFile(const char* filename, GLuint* out_texture, int* out_width, int* out_height)
 {
@@ -153,7 +169,7 @@ int main(int, char**)
 			points[3] = ImGui::GetMousePos();
 		}
 
-		ImGui::GetForegroundDrawList()->AddBezierCubic(points[0], points[1], points[2], points[3], IM_COL32(0, 255, 0, 255), 5);
+		Spline(points[0], points[1], points[2], points[3]).printSpline();
 
 		// Rendering
 		ImGui::Render();
