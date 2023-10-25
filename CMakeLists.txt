@@ -14,9 +14,11 @@ set(IMGUI_SOURCES
         imgui/imgui_tables.cpp
         imgui/backends/imgui_impl_opengl3.cpp
         imgui/backends/imgui_impl_glfw.cpp
+        imgui/misc/cpp/imgui_stdlib.cpp
+        ImGuiFileDialog/ImGuiFileDialog.cpp
 )
 
 add_executable(path_planner_gui main.cpp ${IMGUI_SOURCES})
 
 target_link_libraries(path_planner_gui PRIVATE glfw OpenGL::GL)
-target_include_directories(path_planner_gui PRIVATE imgui)
+target_include_directories(path_planner_gui PRIVATE imgui ImGuiFileDialog)

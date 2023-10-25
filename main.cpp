@@ -19,6 +19,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#include "ImGuiFileDialog.h"
+#include "imgui/misc/cpp/imgui_stdlib.h"
+
 ImVec2 add(ImVec2 a, ImVec2 b) {
 	return {a.x + b.x, a.y + b.y};
 }
@@ -37,6 +40,10 @@ float distance(ImVec2 a, ImVec2 b) {
 
 float convertToField(float x) {
 	return x / 708.0 * 140.0;
+}
+
+float convertFromField(float x) {
+	return x / 140.0 * 708.0;
 }
 
 class Spline {
@@ -97,7 +104,7 @@ public:
 		return points[i];
 	}
 
-	Spline convertEntireToField(ImVec2 windowPosition) {
+	Spline convertEntireToField() {
 		return {ImVec2(convertToField(points[0].y), convertToField(points[0].x)),
 		ImVec2(convertToField(points[1].y), convertToField(points[1].x)),
 		ImVec2(convertToField(points[2].y), convertToField(points[2].x)),
@@ -110,6 +117,12 @@ public:
 
 	std::string* getMPPointer() {
 		return &motionProfile;
+	}
+
+	void convertBack() {
+		for (auto & point : points) {
+			point = ImVec2(convertFromField(point.y), convertFromField(point.x));
+		}
 	}
 };
 
@@ -150,11 +163,11 @@ static void glfw_error_callback(int error, const char* description)
 	fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
 
-void save(std::vector<Spline> path, ImVec2 windowPosition, std::string filename, std::string name) {
+void save(std::vector<Spline> path, std::string filename, std::string name) {
 	std::vector<Spline> convertedPath;
 
 	for (auto &item: path) {
-		convertedPath.emplace_back(item.convertEntireToField(windowPosition));
+		convertedPath.emplace_back(item.convertEntireToField());
 	}
 
 	std::ofstream file(filename);
@@ -167,12 +180,13 @@ void save(std::vector<Spline> path, ImVec2 windowPosition, std::string filename,
 	file << "std::vector<std::pair<PathPlanner::BezierSegment, Pronounce::SinusoidalVelocityProfile*>> " << name << " = " << "{";
 
 	for (auto &item: convertedPath) {
-		file << "{PathPlanner::BezierSegment(";
+		file << "{PathPlanner::BezierSegment(" << std::endl;
 		for (int i = 0; i < 4; i++) {
 			file << "PathPlanner::Point(" << item.get(i).x << "_in, " << item.get(i).y << "_in)";
 			if (i != 3) {
 				file << ",";
 			}
+			file << std::endl;
 		}
 		file << ")," << std::endl << item.getMotionProfiling() << "}," << std::endl;
 	}
@@ -180,6 +194,42 @@ void save(std::vector<Spline> path, ImVec2 windowPosition, std::string filename,
 	file << "};" << std::endl;
 
 	file << "// PathPlanner made path" << std::endl;
+
+	file.close();
+}
+
+void open(std::string filename, std::vector<Spline>* path) {
+
+	std::ifstream file(filename);
+
+	std::string myText;
+
+	std::vector<std::string> pointsString;
+
+// Use a while loop together with the getline() function to read the file line by line
+	while (getline (file, myText)) {
+		// Output the text from the file
+		if (myText.find("PathPlanner::Point") != -1) {
+			std::cout << myText.substr(strlen("PathPlanner::Point("), myText.find(")")-myText.find("(") -1) << std::endl;
+			pointsString.emplace_back(myText.substr(strlen("PathPlanner::Point("), myText.find(")")-myText.find("(") -1));
+		}
+	}
+
+	path->clear();
+
+	for (int i = 0; i < pointsString.size(); i += 4) {
+		path->emplace_back(
+				ImVec2(atof(pointsString[i].substr(0, pointsString[i].find("_")).c_str()), atof(pointsString[i].substr(pointsString[i].find(" "), pointsString[i].find("_", pointsString[i].find("_") + 1)).c_str())),
+				ImVec2(atof(pointsString[i+1].substr(0, pointsString[i+1].find("_")).c_str()), atof(pointsString[i+1].substr(pointsString[i+1].find(" "), pointsString[i+1].find("_", pointsString[i+1].find("_") + 1)).c_str())),
+				ImVec2(atof(pointsString[i+2].substr(0, pointsString[i+2].find("_")).c_str()), atof(pointsString[i+2].substr(pointsString[i+2].find(" "), pointsString[i+2].find("_", pointsString[i+2].find("_") + 1)).c_str())),
+				ImVec2(atof(pointsString[i+3].substr(0, pointsString[i+3].find("_")).c_str()), atof(pointsString[i+3].substr(pointsString[i+3].find(" "), pointsString[i+3].find("_", pointsString[i+3].find("_") + 1)).c_str()))
+				);
+		path->at(i/4).convertBack();
+	}
+
+	if (path->empty()) {
+		path->emplace_back(ImVec2(400, 50), ImVec2(700, 50), ImVec2(50, 200));
+	}
 
 	file.close();
 }
@@ -231,6 +281,10 @@ int main(int, char**)
 
 	std::vector<Spline> splines = {Spline(ImVec2(400, 50), ImVec2(700, 50), ImVec2(50, 200))};
 
+	bool fileSelected = false;
+
+	std::string pathName;
+
 	while (!glfwWindowShouldClose(window))
 	{
 		// Poll and handle events (inputs, window resize, etc.)
@@ -250,6 +304,20 @@ int main(int, char**)
 		ImVec2 windowPosition = minus(ImGui::GetWindowPos(), ImVec2(-10.0, -30.0));
 		ImGui::End();
 
+		// display
+		if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey"))
+		{
+			// action if OK
+			if (ImGuiFileDialog::Instance()->IsOk())
+			{
+				open(ImGuiFileDialog::Instance()->GetCurrentFileName(), &splines);
+				fileSelected = true;
+				// action
+			}
+
+			// close
+			ImGuiFileDialog::Instance()->Close();
+		}
 		// 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
 		{
 			static float f = 0.0f;
@@ -262,8 +330,8 @@ int main(int, char**)
 			{
 				if (ImGui::BeginMenu("File"))
 				{
-					if (ImGui::MenuItem("Open..", "Ctrl+O")) { /* Do stuff */ }
-					if (ImGui::MenuItem("Save", "Ctrl+S"))   { save(splines, windowPosition, "testFile.cpp", "path1"); }
+					if (ImGui::MenuItem("Open..", "Ctrl+O")) { ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".cpp,.h,.hpp", "."); }
+					if (ImGui::MenuItem("Save", "Ctrl+S") && fileSelected)   { save(splines, ImGuiFileDialog::Instance()->GetCurrentFileName(), pathName); }
 					if (ImGui::MenuItem("New", "Ctrl+N"))  { /* Do stuff */ }
 					ImGui::EndMenu();
 				}
@@ -273,14 +341,7 @@ int main(int, char**)
 			ImGui::Text("X: %f, Y: %f", (ImGui::GetMousePos().y-windowPosition.y) / my_image_width * 140.0,
 						(ImGui::GetMousePos().x-windowPosition.x) / my_image_height * 140.0);
 
-			ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-			ImGui::ColorEdit3("clear color", (float *) &clear_color); // Edit 3 floats representing a color
-
-			if (ImGui::Button(
-					"Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-				counter++;
-			ImGui::SameLine();
-			ImGui::Text("counter = %d", counter);
+			ImGui::InputText("Name", &pathName);
 
 			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
 			ImGui::End();
