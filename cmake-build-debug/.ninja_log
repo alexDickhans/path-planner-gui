@@ -1,0 +1,27 @@
+# ninja log v5
+3	2618	1698207048375075330	CMakeFiles/path_planner_gui.dir/imgui/imgui.cpp.o	c725b8125e8bdd60
+2	34	1698207157211249906	build.ninja	13d4b4f6e128b6f3
+304	457	1698206229370850847	path_planner_gui	97095e322a434a0d
+3	2279	1698207048039074803	CMakeFiles/path_planner_gui.dir/imgui/imgui_widgets.cpp.o	917cd30ebcd51ece
+837	1134	1698207046891073006	CMakeFiles/path_planner_gui.dir/imgui/backends/imgui_impl_glfw.cpp.o	2f5d47a913fb3afd
+3	1750	1698207047507073970	CMakeFiles/path_planner_gui.dir/imgui/imgui_demo.cpp.o	48bda1c4726e33a4
+3	607	1698207046367072186	CMakeFiles/path_planner_gui.dir/main.cpp.o	e86b8b4657e2efe5
+607	837	1698207046595072543	CMakeFiles/path_planner_gui.dir/imgui/backends/imgui_impl_opengl3.cpp.o	954b69d7f403dd53
+4	1618	1698207047375073763	CMakeFiles/path_planner_gui.dir/imgui/imgui_tables.cpp.o	30bd6931026a32f4
+3	1940	1698207047699074271	CMakeFiles/path_planner_gui.dir/imgui/imgui_draw.cpp.o	d46e7c4720e89302
+2612	2761	1698196166685136637	libpath_planner_gui.so	b51897bb6751d23b
+1	48	1698207157211249906	build.ninja	13d4b4f6e128b6f3
+1	980	1698207158199251523	CMakeFiles/path_planner_gui.dir/main.cpp.o	e86b8b4657e2efe5
+981	1163	1698207158379251818	path_planner_gui	97095e322a434a0d
+16	1100	1698207203331325915	CMakeFiles/path_planner_gui.dir/main.cpp.o	e86b8b4657e2efe5
+1101	1326	1698207203555326286	path_planner_gui	97095e322a434a0d
+6	1040	1698207727248228289	CMakeFiles/path_planner_gui.dir/main.cpp.o	e86b8b4657e2efe5
+1040	1220	1698207727428228605	path_planner_gui	97095e322a434a0d
+8	938	1698207825696401267	CMakeFiles/path_planner_gui.dir/main.cpp.o	e86b8b4657e2efe5
+938	1113	1698207825868401569	path_planner_gui	97095e322a434a0d
+5	987	1698207968820653373	CMakeFiles/path_planner_gui.dir/main.cpp.o	e86b8b4657e2efe5
+988	1194	1698207969028653739	path_planner_gui	97095e322a434a0d
+6	1094	1698208401853418157	CMakeFiles/path_planner_gui.dir/main.cpp.o	e86b8b4657e2efe5
+1095	1306	1698208402065418531	path_planner_gui	97095e322a434a0d
+2	1058	1698208456049513962	CMakeFiles/path_planner_gui.dir/main.cpp.o	e86b8b4657e2efe5
+1058	1245	1698208456237514294	path_planner_gui	97095e322a434a0d
