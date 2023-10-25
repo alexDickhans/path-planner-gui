@@ -22,6 +22,8 @@
 #include "ImGuiFileDialog.h"
 #include "imgui/misc/cpp/imgui_stdlib.h"
 
+std::string pathName{"ChangeMe"};
+
 ImVec2 add(ImVec2 a, ImVec2 b) {
 	return {a.x + b.x, a.y + b.y};
 }
@@ -54,6 +56,8 @@ private:
 
 	std::string motionProfile{"nullptr"};
 
+	bool inverted{false};
+
 public:
 	Spline(ImVec2 lastPos, ImVec2 lastArm, ImVec2 mousePos) {
 		this->points[0] = lastPos;
@@ -61,11 +65,12 @@ public:
 		this->points[2] = add(this->points[1], mult(minus(mousePos, this->points[1]), 0.5));
 		this->points[3] = mousePos;
 	}
-	Spline(ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 d) {
+	Spline(ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 d, bool inverted = false) {
 		this->points[0] = a;
 		this->points[1] = b;
 		this->points[2] = c;
 		this->points[3] = d;
+		this->inverted = inverted;
 	}
 
 	void printSpline(ImVec2 windowPosition) {
@@ -108,7 +113,7 @@ public:
 		return {ImVec2(convertToField(points[0].y), convertToField(points[0].x)),
 		ImVec2(convertToField(points[1].y), convertToField(points[1].x)),
 		ImVec2(convertToField(points[2].y), convertToField(points[2].x)),
-		ImVec2(convertToField(points[3].y), convertToField(points[3].x))};
+		ImVec2(convertToField(points[3].y), convertToField(points[3].x)), inverted};
 	}
 
 	std::string getMotionProfiling() {
@@ -123,6 +128,10 @@ public:
 		for (auto & point : points) {
 			point = ImVec2(convertFromField(point.y), convertFromField(point.x));
 		}
+	}
+
+	bool* getInverted() {
+		return &inverted;
 	}
 };
 
@@ -188,6 +197,8 @@ void save(std::vector<Spline> path, std::string filename, std::string name) {
 			}
 			file << std::endl;
 		}
+		std::cout << *item.getInverted() << std::endl;
+		file << "," << (*item.getInverted() ? "true" : "false");
 		file << ")," << std::endl << item.getMotionProfiling() << "}," << std::endl;
 	}
 
@@ -205,6 +216,7 @@ void open(std::string filename, std::vector<Spline>* path) {
 	std::string myText;
 
 	std::vector<std::string> pointsString;
+	std::vector<bool> invertedString;
 
 // Use a while loop together with the getline() function to read the file line by line
 	while (getline (file, myText)) {
@@ -212,6 +224,15 @@ void open(std::string filename, std::vector<Spline>* path) {
 		if (myText.find("PathPlanner::Point") != -1) {
 			std::cout << myText.substr(strlen("PathPlanner::Point("), myText.find(")")-myText.find("(") -1) << std::endl;
 			pointsString.emplace_back(myText.substr(strlen("PathPlanner::Point("), myText.find(")")-myText.find("(") -1));
+		} else if (myText.find("true") != -1) {
+			std::cout << myText << std::endl;
+			invertedString.emplace_back(true);
+		} else if (myText.find("false") != -1) {
+			std::cout << myText << std::endl;
+			invertedString.emplace_back(false);
+		} else if (myText.find("std::vector") != -1) {
+			pathName = myText.substr(myText.find(' ', myText.find(' ') + 1)+1,
+									 myText.find(' ', myText.find(' ', myText.find(' ') + 1) + 1) - myText.find(' ', myText.find(' ') + 1)-1);
 		}
 	}
 
@@ -225,6 +246,10 @@ void open(std::string filename, std::vector<Spline>* path) {
 				ImVec2(atof(pointsString[i+3].substr(0, pointsString[i+3].find("_")).c_str()), atof(pointsString[i+3].substr(pointsString[i+3].find(" "), pointsString[i+3].find("_", pointsString[i+3].find("_") + 1)).c_str()))
 				);
 		path->at(i/4).convertBack();
+	}
+
+	for (int i = 0; i < path->size(); i++) {
+		*(path->at(i).getInverted()) = invertedString.at(i);
 	}
 
 	if (path->empty()) {
@@ -283,8 +308,6 @@ int main(int, char**)
 
 	bool fileSelected = false;
 
-	std::string pathName;
-
 	while (!glfwWindowShouldClose(window))
 	{
 		// Poll and handle events (inputs, window resize, etc.)
@@ -310,7 +333,7 @@ int main(int, char**)
 			// action if OK
 			if (ImGuiFileDialog::Instance()->IsOk())
 			{
-				open(ImGuiFileDialog::Instance()->GetCurrentFileName(), &splines);
+				open(ImGuiFileDialog::Instance()->GetFilePathName(), &splines);
 				fileSelected = true;
 				// action
 			}
@@ -330,8 +353,8 @@ int main(int, char**)
 			{
 				if (ImGui::BeginMenu("File"))
 				{
-					if (ImGui::MenuItem("Open..", "Ctrl+O")) { ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".cpp,.h,.hpp", "."); }
-					if (ImGui::MenuItem("Save", "Ctrl+S") && fileSelected)   { save(splines, ImGuiFileDialog::Instance()->GetCurrentFileName(), pathName); }
+					if (ImGui::MenuItem("Open..", "Ctrl+O")) { ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".hpp", "."); }
+					if (ImGui::MenuItem("Save", "Ctrl+S") && fileSelected)   { save(splines, ImGuiFileDialog::Instance()->GetFilePathName(), pathName); }
 					if (ImGui::MenuItem("New", "Ctrl+N"))  { /* Do stuff */ }
 					ImGui::EndMenu();
 				}
@@ -342,6 +365,12 @@ int main(int, char**)
 						(ImGui::GetMousePos().x-windowPosition.x) / my_image_height * 140.0);
 
 			ImGui::InputText("Name", &pathName);
+
+			ImGui::Text("Inverted: ");
+
+			for (int i = 0; i < splines.size(); ++i) {
+				ImGui::Checkbox(std::to_string(i).c_str(), splines.at(i).getInverted());
+			}
 
 			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
 			ImGui::End();
