@@ -307,6 +307,7 @@ int main(int, char**)
 	std::vector<Spline> splines = {Spline(ImVec2(400, 50), ImVec2(700, 50), ImVec2(50, 200))};
 
 	bool fileSelected = false;
+	bool saved = false;
 
 	while (!glfwWindowShouldClose(window))
 	{
@@ -322,7 +323,15 @@ int main(int, char**)
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
-		ImGui::Begin("Field");
+		if (ImGui::IsMouseClicked(0) || ImGui::IsMouseClicked(1)) {
+			saved = false;
+		}
+
+		if (saved) {
+			ImGui::Begin("Field", NULL);
+		} else {
+			ImGui::Begin("Field", NULL, ImGuiWindowFlags_UnsavedDocument);
+		}
 		ImGui::Image((void*)(intptr_t)my_image_texture, ImVec2(my_image_width, my_image_height));
 		ImVec2 windowPosition = minus(ImGui::GetWindowPos(), ImVec2(-10.0, -30.0));
 		ImGui::End();
@@ -353,9 +362,8 @@ int main(int, char**)
 			{
 				if (ImGui::BeginMenu("File"))
 				{
-					if (ImGui::MenuItem("Open..", "Ctrl+O")) { ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".hpp", "."); }
-					if (ImGui::MenuItem("Save", "Ctrl+S") && fileSelected)   { save(splines, ImGuiFileDialog::Instance()->GetFilePathName(), pathName); }
-					if (ImGui::MenuItem("New", "Ctrl+N"))  { /* Do stuff */ }
+					if (ImGui::MenuItem("Open", "Ctrl+O")) { ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".hpp", "."); }
+					if (ImGui::MenuItem("Save", "Ctrl+S") && fileSelected)   { save(splines, ImGuiFileDialog::Instance()->GetFilePathName(), pathName); saved = true; }
 					ImGui::EndMenu();
 				}
 				ImGui::EndMenuBar();
