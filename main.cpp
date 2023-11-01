@@ -14,6 +14,7 @@
 #include <GLES2/gl2.h>
 #endif
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
+#include <utility>
 #include <vector>
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -57,6 +58,7 @@ private:
 	std::string motionProfile{"nullptr"};
 
 	bool inverted{false};
+	bool displayed{true};
 
 public:
 	Spline(ImVec2 lastPos, ImVec2 lastArm, ImVec2 mousePos) {
@@ -65,18 +67,32 @@ public:
 		this->points[2] = add(this->points[1], mult(minus(mousePos, this->points[1]), 0.5));
 		this->points[3] = mousePos;
 	}
-	Spline(ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 d, bool inverted = false) {
+	Spline(ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 d, bool inverted = false, std::string motionProfile = "nullptr") {
 		this->points[0] = a;
 		this->points[1] = b;
 		this->points[2] = c;
 		this->points[3] = d;
 		this->inverted = inverted;
+		this->motionProfile = std::move(motionProfile);
 	}
 
 	void printSpline(ImVec2 windowPosition) {
-		ImGui::GetForegroundDrawList()->AddBezierCubic(add(points[0], windowPosition), add(points[1], windowPosition), add(points[2], windowPosition), add(points[3], windowPosition), IM_COL32(0, 0, 0, 225), 2);
+		if (!displayed) {
+			return;
+		}
+		if (inverted) {
+			// Draw the Bézier curve under everything else
+			ImGui::GetForegroundDrawList()->AddBezierCubic(add(points[0], windowPosition), add(points[1], windowPosition), add(points[2], windowPosition), add(points[3], windowPosition), IM_COL32(103, 3, 47, 225), 2);
+		} else {
+			// Draw the Bézier curve under everything else
+			ImGui::GetForegroundDrawList()->AddBezierCubic(add(points[0], windowPosition), add(points[1], windowPosition), add(points[2], windowPosition), add(points[3], windowPosition), IM_COL32(255, 103, 0, 225), 2);
+		}
+
+		// Draw straight lines in between the control and the main points
 		ImGui::GetForegroundDrawList()->AddLine(add(points[0], windowPosition), add(points[1], windowPosition), IM_COL32(10, 10, 10, 255), 3);
 		ImGui::GetForegroundDrawList()->AddLine(add(points[2], windowPosition), add(points[3], windowPosition), IM_COL32(10, 10, 10, 255), 3);
+
+		// Draw circles on the beginning and end control and other points
 		ImGui::GetForegroundDrawList()->AddCircleFilled(add(points[0], windowPosition), 8, IM_COL32(0, 255, 0, 255));
 		ImGui::GetForegroundDrawList()->AddCircleFilled(add(points[1], windowPosition), 8, IM_COL32(0, 255, 0, 255));
 		ImGui::GetForegroundDrawList()->AddCircleFilled(add(points[2], windowPosition), 10, IM_COL32(255, 0, 0, 255));
@@ -84,24 +100,41 @@ public:
 	}
 
 	bool processMouse(ImVec2 windowPosition, bool overallFocus) {
+		// Stop this code if the Spline is not in focus
+		if (!displayed) {
+			return overallFocus;
+		}
 
+		// Go through the spline and see if any of the other points are in focus - taken into account in determining clicks
 		for (auto &focus: isFocus) {
 			overallFocus = focus || overallFocus;
 		}
 
 		for (int i = 0; i < 4; i++) {
+			// Determine if the click is close enough to the point to start dragging
 			if (distance(minus(ImGui::GetMousePos(), windowPosition), points[i]) < 8 && ImGui::IsMouseDown(0) && !overallFocus) {
 				isFocus[i] = true;
 				overallFocus = true;
 			} else if (!ImGui::IsMouseDown(0)) {
+				// stop all focus when the mouse comes up
 				isFocus[i] = false;
 			}
 
+			// Move the point if the focus for this point is true
 			if (isFocus[i]) {
-				points[i] = minus(ImGui::GetMousePos(), windowPosition);
+				// add the mouse deltas to the control points if it's one of the endpoints
+				if (i == 0) {
+					points[1] = add(ImGui::GetIO().MouseDelta, points[1]);
+				} else if (i == 3) {
+					points[2] = add(ImGui::GetIO().MouseDelta, points[2]);
+				}
+
+				// Add  the mouse delta to the current point to move the point along with the mouse.
+				points[i] = add(ImGui::GetIO().MouseDelta, points[i]);
 			}
 		}
 
+		// Return if there is a focus in this object for the next object(prioritizes points sooner in the path)
 		return overallFocus;
 	}
 
@@ -113,7 +146,7 @@ public:
 		return {ImVec2(convertToField(points[0].y), convertToField(points[0].x)),
 		ImVec2(convertToField(points[1].y), convertToField(points[1].x)),
 		ImVec2(convertToField(points[2].y), convertToField(points[2].x)),
-		ImVec2(convertToField(points[3].y), convertToField(points[3].x)), inverted};
+		ImVec2(convertToField(points[3].y), convertToField(points[3].x)), inverted, motionProfile};
 	}
 
 	std::string getMotionProfiling() {
@@ -132,6 +165,10 @@ public:
 
 	bool* getInverted() {
 		return &inverted;
+	}
+
+	bool* getDisplayed() {
+		return &displayed;
 	}
 };
 
@@ -217,6 +254,7 @@ void open(std::string filename, std::vector<Spline>* path) {
 
 	std::vector<std::string> pointsString;
 	std::vector<bool> invertedString;
+	std::vector<std::string> motionProfiles;
 
 // Use a while loop together with the getline() function to read the file line by line
 	while (getline (file, myText)) {
@@ -233,6 +271,10 @@ void open(std::string filename, std::vector<Spline>* path) {
 		} else if (myText.find("std::vector") != -1) {
 			pathName = myText.substr(myText.find(' ', myText.find(' ') + 1)+1,
 									 myText.find(' ', myText.find(' ', myText.find(' ') + 1) + 1) - myText.find(' ', myText.find(' ') + 1)-1);
+		} else if (myText.find("nullptr") != -1) {
+			motionProfiles.emplace_back("nullptr");
+		} else if (myText.find("new") != -1) {
+			motionProfiles.emplace_back(myText.substr(0, myText.find('}')));
 		}
 	}
 
@@ -250,6 +292,10 @@ void open(std::string filename, std::vector<Spline>* path) {
 
 	for (int i = 0; i < path->size(); i++) {
 		*(path->at(i).getInverted()) = invertedString.at(i);
+	}
+
+	for (int i = 0; i < path->size(); i++) {
+		*(path->at(i).getMPPointer()) = motionProfiles.at(i);
 	}
 
 	if (path->empty()) {
@@ -295,16 +341,22 @@ int main(int, char**)
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	ImGui_ImplOpenGL3_Init(glsl_version);
 
+	// Image width for drawing api
 	int my_image_width = 0;
 	int my_image_height = 0;
+
+	// Load texture from file
 	GLuint my_image_texture = 0;
 	bool ret = LoadTextureFromFile("./images/field.png", &my_image_texture, &my_image_width, &my_image_height);
+
+	// Make sure that the file is not null
 	IM_ASSERT(ret);
 
 	// Our state
 	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
 	std::vector<Spline> splines = {Spline(ImVec2(400, 50), ImVec2(700, 50), ImVec2(50, 200))};
+	std::vector<std::vector<Spline>> history = {splines};
 
 	bool fileSelected = false;
 	bool saved = false;
@@ -323,15 +375,23 @@ int main(int, char**)
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
+		// Determine if the code is saved based on whether any button has been pressed
+		// If any button is pressed that indicates that a change could have been made and
+		// that you need to save it
 		if (ImGui::IsMouseClicked(0) || ImGui::IsMouseClicked(1)) {
+			// Keep tract of saved status
 			saved = false;
 		}
 
+		// Show saved indicator in field window with an unsaved document flag
 		if (saved) {
 			ImGui::Begin("Field", NULL);
 		} else {
 			ImGui::Begin("Field", NULL, ImGuiWindowFlags_UnsavedDocument);
 		}
+
+		// When the file is saved we set saved = true;
+
 		ImGui::Image((void*)(intptr_t)my_image_texture, ImVec2(my_image_width, my_image_height));
 		ImVec2 windowPosition = minus(ImGui::GetWindowPos(), ImVec2(-10.0, -30.0));
 		ImGui::End();
@@ -350,49 +410,92 @@ int main(int, char**)
 			// close
 			ImGuiFileDialog::Instance()->Close();
 		}
-		// 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
+
+		ImGui::Begin(
+				"FileWindow!", NULL, ImGuiWindowFlags_MenuBar);                          // Create a window called "Hello, world!" and append into it.
+
+		if (ImGui::BeginMenuBar())
 		{
-			static float f = 0.0f;
-			static int counter = 0;
-
-			ImGui::Begin(
-					"Hello, world!", NULL, ImGuiWindowFlags_MenuBar);                          // Create a window called "Hello, world!" and append into it.
-
-			if (ImGui::BeginMenuBar())
+			if (ImGui::BeginMenu("File"))
 			{
-				if (ImGui::BeginMenu("File"))
-				{
-					if (ImGui::MenuItem("Open", "Ctrl+O")) { ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".hpp", "."); }
-					if (ImGui::MenuItem("Save", "Ctrl+S") && fileSelected)   { save(splines, ImGuiFileDialog::Instance()->GetFilePathName(), pathName); saved = true; }
-					ImGui::EndMenu();
-				}
-				ImGui::EndMenuBar();
+				if (ImGui::MenuItem("Open", "Ctrl+O")) { ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".hpp", "include/AutoPaths/");
+					history.clear();
+					history.emplace_back(splines); }
+				if (ImGui::MenuItem("Save", "Ctrl+S") && fileSelected)   { save(splines, ImGuiFileDialog::Instance()->GetFilePathName(), pathName); saved = true; }
+				if (ImGui::MenuItem("Undo", "Ctrl+Z") && history.size() > 1)   { saved = false; splines = history.at(history.size()-1); history.pop_back(); }
+				ImGui::EndMenu();
 			}
-
-			ImGui::Text("X: %f, Y: %f", (ImGui::GetMousePos().y-windowPosition.y) / my_image_width * 140.0,
-						(ImGui::GetMousePos().x-windowPosition.x) / my_image_height * 140.0);
-
-			ImGui::InputText("Name", &pathName);
-
-			ImGui::Text("Inverted: ");
-
-			for (int i = 0; i < splines.size(); ++i) {
-				ImGui::Checkbox(std::to_string(i).c_str(), splines.at(i).getInverted());
-			}
-
-			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-			ImGui::End();
+			ImGui::EndMenuBar();
 		}
 
+		if (ImGui::GetKeyPressedAmount(ImGuiKey_S, 1, 0.05) == 1 && !ImGui::IsAnyItemActive() && fileSelected) {
+			save(splines, ImGuiFileDialog::Instance()->GetFilePathName(), pathName); saved = true;
+		}
+
+		if (ImGui::GetKeyPressedAmount(ImGuiKey_Z, 1, 0.05) == 1 && !ImGui::IsAnyItemActive() && history.size() > 1) {
+			saved = false; splines = history.at(history.size()-1); history.pop_back();
+		}
+
+		if (ImGui::GetKeyPressedAmount(ImGuiKey_O, 1, 0.05) == 1 && !ImGui::IsAnyItemActive()) {
+			ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".hpp", ".");
+			history.clear();
+			history.emplace_back(splines);
+		}
+		ImGui::Text("X: %f, Y: %f", (ImGui::GetMousePos().y-windowPosition.y) / my_image_width * 140.0,
+					(ImGui::GetMousePos().x-windowPosition.x) / my_image_height * 140.0);
+
+		ImGui::InputText("Name", &pathName);
+		ImGui::Text("History length: %ld", history.size());
+
+		ImGui::Text("Inverted: ");
+
+		for (int i = 0; i < splines.size(); ++i) {
+			ImGui::Checkbox(std::to_string(i).c_str(), splines.at(i).getInverted());
+		}
+
+		// indicate that this is the displayed code
+		ImGui::Text("Displayed: ");
+
+		// Create checkboxes for each of the splines
+		for (int i = 0; i < splines.size(); ++i) {
+			ImGui::Checkbox(("displayed: " + std::to_string(i)).c_str(), splines.at(i).getDisplayed());
+		}
+
+		// indicate that this is the displayed code
+		ImGui::Text("Motion profiling: ");
+
+		// Create checkboxes for each of the splines
+		for (int i = 0; i < splines.size(); ++i) {
+			ImGui::InputText(("mp: " + std::to_string(i)).c_str(), splines.at(i).getMPPointer());
+		}
+
+		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+		ImGui::End();
 		bool isFocus = false;
 
 		for (auto &item: splines) {
 			isFocus = item.processMouse(windowPosition, isFocus) || isFocus;
 		}
 
+		// Determines if something has changed
+		if (isFocus && ImGui::IsMouseClicked(0)) {
+			// Add a new splines array to the history
+			history.emplace_back(splines);
+
+			// Limit length of history to 30 paths list
+			if (history.size() > 30) {
+				history.erase(history.begin());
+			}
+		}
+
 		if (ImGui::IsMouseDoubleClicked(1) && splines.size() > 1) {
 			for (int i = 0; i < splines.size(); i++) {
 				if (distance(splines.at(i).get(3), minus(ImGui::GetMousePos(), windowPosition)) < 8) {
+					history.emplace_back(splines);
+					if (history.size() > 30) {
+						history.erase(history.begin());
+					}
+
 					splines.erase(splines.begin() + i);
 					break;
 				}
@@ -400,6 +503,10 @@ int main(int, char**)
 		}
 
 		if (ImGui::IsMouseDoubleClicked(0) && !isFocus) {
+			history.emplace_back(splines);
+			if (history.size() > 30) {
+				history.erase(history.begin());
+			}
 			splines.emplace_back(splines.at(splines.size()-1).get(3), splines.at(splines.size()-1).get(2), minus(ImGui::GetMousePos(), windowPosition));
 		}
 
