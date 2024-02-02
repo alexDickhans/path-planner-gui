@@ -6,7 +6,9 @@
 #include "imgui/imgui.h"
 #include "imgui/backends/imgui_impl_glfw.h"
 #include "imgui/backends/imgui_impl_opengl3.h"
-#include <stdio.h>
+#include "bezierSegment.hpp"
+#include "implot/implot.h"
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #define GL_SILENCE_DEPRECATION
@@ -55,13 +57,15 @@ private:
 
 	bool isFocus[4]{false, false, false, false};
 
-	std::string motionProfile{"nullptr"};
+	std::string motionProfile{"0.0"};
 
 	bool inverted{false};
 	bool displayed{true};
 
+	float curvature[100];
+
 public:
-	Spline(ImVec2 lastPos, ImVec2 lastArm, ImVec2 mousePos) {
+	Spline(ImVec2 lastPos, ImVec2 lastArm, ImVec2 mousePos, bool mouseInverted = false) {
 		this->points[0] = lastPos;
 		this->points[1] = add(lastPos, minus(lastPos, lastArm));
 		this->points[2] = add(this->points[1], mult(minus(mousePos, this->points[1]), 0.5));
@@ -142,6 +146,10 @@ public:
 		return points[i];
 	}
 
+	ImVec2* getPointer(int i) {
+		return &points[i];
+	}
+
 	Spline convertEntireToField() {
 		return {ImVec2(convertToField(points[0].y), convertToField(points[0].x)),
 		ImVec2(convertToField(points[1].y), convertToField(points[1].x)),
@@ -169,6 +177,32 @@ public:
 
 	bool* getDisplayed() {
 		return &displayed;
+	}
+
+	PathPlanner::BezierSegment getBezierSegment() {
+		Spline converted = this->convertEntireToField();
+		PathPlanner::BezierSegment segment = PathPlanner::BezierSegment(
+				PathPlanner::Point(converted.points[0].x * 1_in, converted.points[0].y * 1_in),
+				PathPlanner::Point(converted.points[1].x * 1_in, converted.points[1].y * 1_in),
+				PathPlanner::Point(converted.points[2].x * 1_in, converted.points[2].y * 1_in),
+				PathPlanner::Point(converted.points[3].x * 1_in, converted.points[3].y * 1_in));
+
+		return segment;
+	}
+
+	float* getCurvature() {
+		Spline converted = this->convertEntireToField();
+		PathPlanner::BezierSegment segment = PathPlanner::BezierSegment(
+				PathPlanner::Point(converted.points[0].x * 1_in, converted.points[0].y * 1_in),
+				PathPlanner::Point(converted.points[1].x * 1_in, converted.points[1].y * 1_in),
+				PathPlanner::Point(converted.points[2].x * 1_in, converted.points[2].y * 1_in),
+				PathPlanner::Point(converted.points[3].x * 1_in, converted.points[3].y * 1_in));
+
+		for (int i = 0; i < 100; i++) {
+			curvature[i] = segment.getCurvature(static_cast<double>(i)/ 100.0).Convert(degree/inch);
+		}
+
+		return curvature;
 	}
 };
 
@@ -222,8 +256,10 @@ void save(std::vector<Spline> path, std::string filename, std::string name) {
 
 	file << "#pragma once" << std::endl;
 	file << "#include <vector>" << std::endl;
+	file << "#include \"velocityProfile/sinusoidalVelocityProfile.hpp\"\n"
+			"using namespace Pronounce;" << std::endl;
 
-	file << "std::vector<std::pair<PathPlanner::BezierSegment, Pronounce::SinusoidalVelocityProfile*>> " << name << " = " << "{";
+	file << "std::vector<std::pair<PathPlanner::BezierSegment, QSpeed>> " << name << " = " << "{";
 
 	for (auto &item: convertedPath) {
 		file << "{PathPlanner::BezierSegment(" << std::endl;
@@ -271,9 +307,9 @@ void open(std::string filename, std::vector<Spline>* path) {
 		} else if (myText.find("std::vector") != -1) {
 			pathName = myText.substr(myText.find(' ', myText.find(' ') + 1)+1,
 									 myText.find(' ', myText.find(' ', myText.find(' ') + 1) + 1) - myText.find(' ', myText.find(' ') + 1)-1);
-		} else if (myText.find("nullptr") != -1) {
-			motionProfiles.emplace_back("nullptr");
-		} else if (myText.find("new") != -1) {
+		} else if (myText.find("{}") != -1 || myText.find("0.0") != -1) {
+			motionProfiles.emplace_back("0.0");
+		} else if (myText.find("getValue") != -1 || myText.find("second") != -1) {
 			motionProfiles.emplace_back(myText.substr(0, myText.find('}')));
 		}
 	}
@@ -328,6 +364,7 @@ int main(int, char**)
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
+	ImPlot::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
@@ -394,6 +431,200 @@ int main(int, char**)
 
 		ImGui::Image((void*)(intptr_t)my_image_texture, ImVec2(my_image_width, my_image_height));
 		ImVec2 windowPosition = minus(ImGui::GetWindowPos(), ImVec2(-10.0, -30.0));
+		ImGui::End();
+
+		ImGui::Begin("Graphs", NULL);
+		QSpeed maxRobotSpeed = 60_in/second;
+		QAcceleration maxRobotAcceleration = 100_in/second/second;
+		QLength trackWidth = 8_in;
+
+		std::vector<PathPlanner::BezierSegment> segments;
+
+		for (auto spline : splines) {
+			segments.emplace_back(spline.getBezierSegment());
+		}
+
+		QLength length = 0.0;
+
+		std::for_each(segments.begin(), segments.end(), [&](auto &item) {
+			length += item.getDistance();
+		});
+
+		int granularity = std::max(5.0, length.Convert(1_in));
+
+		QLength distanceChange = length /(double) granularity;
+
+		std::vector<QSpeed> maxSpeedLeft;
+		std::vector<QSpeed> maxSpeedRight;
+		std::vector<QSpeed> maxSpeed;
+		auto* curvatureByDistance = (float*) malloc((granularity +1)*sizeof(float));
+		auto* maxSpeedByDistance = (float*) malloc((granularity+1)*sizeof(float));
+		auto* limitedSpeedLeft = (float*) malloc((granularity+1)*sizeof(float));
+		auto* limitedSpeedRight = (float*) malloc((granularity+1)*sizeof(float));
+		auto* limitedSpeed = (float*) malloc((granularity+1)*sizeof(float));
+		auto* time = (float*) malloc((granularity+1)*sizeof(float));
+		auto* distanceTotal = (float*) malloc((granularity+1)*sizeof(float));
+		auto* accelerationByDistance = (float*) malloc((granularity+1)*sizeof(float));
+
+		QSpeed lastSpeed = 0.0;
+		QTime lastTime = 0.0;
+
+		for (int i = 0; i <= granularity; i++) {
+			QLength currentDistance = length.getValue() * (static_cast<double>(i) / static_cast<double>(granularity));
+			distanceTotal[i] = currentDistance.Convert(inch);
+
+			int t = 0;
+			double remainder = 0;
+
+			while (t < (segments.size()-1) && currentDistance >= segments.at(t).getDistance()) {
+				currentDistance -= segments.at(t).getDistance();
+				t ++;
+			}
+
+			remainder = segments.at(t).getTByLength(currentDistance);
+			QCurvature currentCurvature = segments.at(t).getCurvature(remainder);
+
+			QSpeed maxSpeedAtT = (*splines[t].getInverted() ? -1 : 1) * maxRobotSpeed /(1.0 + abs(currentCurvature.getValue() * 0.5) * trackWidth.getValue());
+
+			QAcceleration currentAcceleration = 0.0;
+			if (i == 0) {
+				limitedSpeedLeft[i] = 0.0;
+			} else {
+				QTime minimumTime = -abs(lastSpeed.getValue()) + sqrt(pow(lastSpeed.getValue(), 2) + 2 * maxRobotAcceleration.getValue() * distanceChange.getValue());
+				minimumTime = minimumTime.getValue() / maxRobotAcceleration.getValue();
+
+				QSpeed currentMaxSpeed = abs(lastSpeed.getValue()) + maxRobotAcceleration.getValue()*minimumTime.getValue();
+
+				currentMaxSpeed = std::min(currentMaxSpeed.getValue(), abs(maxSpeedAtT.getValue())) * (*splines[t].getInverted() ? -1 : 1);
+
+				currentAcceleration = (Qsq(currentMaxSpeed) - Qsq(lastSpeed)) / (2 * distanceChange);
+				QTime duration = abs(((currentMaxSpeed - lastSpeed)/currentAcceleration).getValue());
+
+				accelerationByDistance[i] = currentAcceleration.Convert(inch/second/second);
+				lastSpeed = currentMaxSpeed;
+				lastTime = duration;
+			}
+
+			time[i] = lastTime.Convert(second);
+			limitedSpeedLeft[i] = lastSpeed.Convert(inch/second);
+			curvatureByDistance[i] = currentCurvature.Convert(degree/inch);
+			maxSpeedByDistance[i] = maxSpeedAtT.Convert(inch/second);
+		}
+
+		lastSpeed = 0.0;
+
+		for (int i = granularity; i >= 0; i--) {
+			QLength currentDistance = length.getValue() * (static_cast<double>(i) / static_cast<double>(granularity));
+
+			int t = 0;
+			double remainder = 0;
+
+			while (t < (segments.size()-1) && currentDistance >= segments.at(t).getDistance()) {
+				currentDistance -= segments.at(t).getDistance();
+				t ++;
+			}
+
+			remainder = segments.at(t).getTByLength(currentDistance);
+			QCurvature currentCurvature = segments.at(t).getCurvature(remainder);
+
+			QSpeed maxSpeedAtT = (*splines[t].getInverted() ? -1 : 1) * maxRobotSpeed /(1.0 + abs(currentCurvature.getValue() * 0.5) * trackWidth.getValue());
+
+			QAcceleration currentAcceleration = 0.0;
+
+			if (i == granularity) {
+				limitedSpeedRight[i] = 0.0;
+				lastTime = 0.0;
+			} else {
+				QTime minimumTime = -abs(lastSpeed.getValue()) + sqrt(pow(lastSpeed.getValue(), 2) + 2 * maxRobotAcceleration.getValue() * distanceChange.getValue());
+				minimumTime = minimumTime.getValue() / maxRobotAcceleration.getValue();
+
+				QSpeed currentMaxSpeed = abs(lastSpeed.getValue()) + maxRobotAcceleration.getValue()*minimumTime.getValue();
+
+				currentMaxSpeed = std::min(currentMaxSpeed.getValue(), abs(maxSpeedAtT.getValue())) * (*splines[t].getInverted() ? -1 : 1);
+
+				currentAcceleration = (Qsq(currentMaxSpeed) - Qsq(lastSpeed)) / (2 * distanceChange);
+				QTime duration = abs(((currentMaxSpeed - lastSpeed)/currentAcceleration).getValue());
+
+				lastSpeed = currentMaxSpeed;
+				lastTime = duration;
+			}
+
+			limitedSpeedRight[i] = lastSpeed.Convert(inch/second);
+			if (lastSpeed.Convert(inch/second) < limitedSpeedLeft[i]) {
+				time[i] = lastTime.Convert(second);
+				accelerationByDistance[i] = currentAcceleration.Convert(inch/second/second);
+			}
+			limitedSpeed[i] = std::min(limitedSpeedLeft[i], limitedSpeedRight[i]);
+		}
+
+		lastTime = 0.0;
+
+		for (int i = 0; i <= granularity; i++) {
+			lastTime += time[i];
+			time[i] = lastTime.Convert(second);
+		}
+
+		ImPlot::SetNextAxesToFit();
+		if (ImPlot::BeginPlot("Curvature By Distance")) {
+			ImPlot::SetupAxes("inch", "Degree/Inch");
+			ImPlot::PlotLine("Curvature", distanceTotal, curvatureByDistance, granularity + 1);
+			ImPlot::EndPlot();
+		}
+
+		ImPlot::SetNextAxesToFit();
+		if (ImPlot::BeginPlot("Curvature By Time")) {
+			ImPlot::SetupAxes("inch", "Degree/Inch");
+			ImPlot::PlotLine("Curvature", time, curvatureByDistance, granularity + 1);
+			ImPlot::EndPlot();
+		}
+
+		if (ImPlot::BeginPlot("Speed By Distance")) {
+			ImPlot::SetupAxes("inch", "inch/second");
+			ImPlot::SetupAxisLimits(ImAxis_Y1, -maxRobotSpeed.Convert(inch/second)*1.5, maxRobotSpeed.Convert(inch/second)*1.5, ImPlotCond_Always);
+			ImPlot::SetupAxisLimits(ImAxis_X1, 0, granularity, ImPlotCond_Always);
+			ImPlot::PlotLine("Max Speed", distanceTotal, maxSpeedByDistance, granularity + 1);
+			ImPlot::PlotLine("Left-limited Speed", distanceTotal, limitedSpeedLeft, granularity + 1);
+			ImPlot::PlotLine("Right-limited Speed", distanceTotal, limitedSpeedRight, granularity + 1);
+			ImPlot::PlotLine("Limited Speed", distanceTotal, limitedSpeed, granularity + 1);
+			ImPlot::EndPlot();
+		}
+
+		if (ImPlot::BeginPlot("Speed By Time")) {
+			ImPlot::SetupAxes("inch", "inch/second");
+			ImPlot::SetupAxisLimits(ImAxis_Y1, -maxRobotSpeed.Convert(inch/second)*1.5, maxRobotSpeed.Convert(inch/second)*1.5, ImPlotCond_Always);
+			ImPlot::SetupAxisLimits(ImAxis_X1, 0, lastTime.Convert(second), ImPlotCond_Always);
+			ImPlot::PlotLine("Max Speed", time, maxSpeedByDistance, granularity + 1);
+			ImPlot::PlotLine("Left-limited Speed", time, limitedSpeedLeft, granularity + 1);
+			ImPlot::PlotLine("Right-limited Speed", time, limitedSpeedRight, granularity + 1);
+			ImPlot::PlotLine("Limited Speed", time, limitedSpeed, granularity + 1);
+			ImPlot::EndPlot();
+		}
+
+		if (ImPlot::BeginPlot("Acceleration By Time")) {
+			ImPlot::SetupAxes("inch", "inch/second");
+			ImPlot::SetupAxisLimits(ImAxis_Y1, -maxRobotAcceleration.Convert(inch/second/second)*1.5, maxRobotAcceleration.Convert(inch/second/second)*1.5, ImPlotCond_Always);
+			ImPlot::SetupAxisLimits(ImAxis_X1, 0, lastTime.Convert(second), ImPlotCond_Always);
+			ImPlot::PlotLine("Max Speed", time, accelerationByDistance, granularity + 1);
+			ImPlot::EndPlot();
+		}
+
+		if (ImPlot::BeginPlot("Distance By Time")) {
+			ImPlot::SetupAxes("inch", "inch/second");
+			ImPlot::SetupAxisLimits(ImAxis_Y1, 0, length.Convert(inch), ImPlotCond_Always);
+			ImPlot::SetupAxisLimits(ImAxis_X1, 0, lastTime.Convert(second), ImPlotCond_Always);
+			ImPlot::PlotLine("Max Speed", time, distanceTotal, granularity + 1);
+			ImPlot::EndPlot();
+		}
+
+		free(curvatureByDistance);
+		free(maxSpeedByDistance);
+		free(limitedSpeedLeft);
+		free(limitedSpeedRight);
+		free(limitedSpeed);
+		free(time);
+		free(distanceTotal);
+		free(accelerationByDistance);
+
 		ImGui::End();
 
 		// display
@@ -471,6 +702,7 @@ int main(int, char**)
 
 		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
 		ImGui::End();
+
 		bool isFocus = false;
 
 		for (auto &item: splines) {
@@ -502,7 +734,7 @@ int main(int, char**)
 			}
 		}
 
-		if (ImGui::IsMouseDoubleClicked(0) && !isFocus) {
+		if (ImGui::IsMouseDoubleClicked(0) && !isFocus && !ImGui::IsAnyItemHovered()) {
 			history.emplace_back(splines);
 			if (history.size() > 30) {
 				history.erase(history.begin());
@@ -532,6 +764,7 @@ int main(int, char**)
 	// Cleanup
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
+	ImPlot::DestroyContext();
 	ImGui::DestroyContext();
 
 	glfwDestroyWindow(window);

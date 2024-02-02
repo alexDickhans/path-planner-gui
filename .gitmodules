@@ -7,3 +7,6 @@
 [submodule "ImGuiFileDialog"]
 	path = ImGuiFileDialog
 	url = https://github.com/aiekick/ImGuiFileDialog
+[submodule "implot"]
+	path = implot
+	url = https://github.com/epezent/implot

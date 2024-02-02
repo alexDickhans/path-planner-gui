@@ -16,6 +16,10 @@ set(IMGUI_SOURCES
         imgui/backends/imgui_impl_glfw.cpp
         imgui/misc/cpp/imgui_stdlib.cpp
         ImGuiFileDialog/ImGuiFileDialog.cpp
+        implot/implot.h
+        implot/implot.cpp
+        implot/implot_internal.h
+        implot/implot_items.cpp
 )
 
 add_executable(path_planner_gui main.cpp ${IMGUI_SOURCES})
