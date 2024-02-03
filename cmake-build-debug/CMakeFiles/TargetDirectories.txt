@@ -1,3 +1,0 @@
-/home/alex/CLionProjects/path-planner-gui/cmake-build-debug/CMakeFiles/path_planner_gui.dir
-/home/alex/CLionProjects/path-planner-gui/cmake-build-debug/CMakeFiles/edit_cache.dir
-/home/alex/CLionProjects/path-planner-gui/cmake-build-debug/CMakeFiles/rebuild_cache.dir

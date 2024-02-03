@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.26)
 project(path_planner_gui)
 
 find_package(glfw3 3.3 REQUIRED)
-find_package(OpenGL REQUIRED)
+find_package(OpenGL 3.2 REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 
